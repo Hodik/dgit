@@ -88,7 +88,13 @@ var checkoutCmd = &cobra.Command{
 	Use:   "checkout",
 	Short: "Checkout a commit",
 	Run: func(cmd *cobra.Command, args []string) {
-		checkout(resolveRefOrHash(getItemOrEmpty(args, 0)))
+
+		if len(args) < 1 {
+			cmd.Println("no commit / name provided")
+			return
+		}
+
+		checkout(args[0])
 	},
 }
 
@@ -105,10 +111,22 @@ var tagCmd = &cobra.Command{
 }
 
 var kCmd = &cobra.Command{
-  Use:   "k",
-  Short: "Show refs",
+	Use:   "k",
+	Short: "Show refs",
+	Run: func(cmd *cobra.Command, args []string) {
+		k()
+	},
+}
+
+var branchCmd = &cobra.Command{
+  Use:   "branch",
+  Short: "Create a new branch",
   Run: func(cmd *cobra.Command, args []string) {
-    k()
+    if len(args) < 1 {
+      cmd.Println("no branch name provided")
+      return
+    }
+    branch(args[0], resolveRefOrHash(getItemOrEmpty(args, 1)))
   },
 }
 
@@ -122,20 +140,20 @@ func getItemOrEmpty(args []string, index int) string {
 
 func resolveRefOrHash(in string) string {
 
-  if in == "@" {
-    in = "HEAD"
-  }
+	if in == "@" {
+		in = "HEAD"
+	}
 
 	if in == "" {
-		return getRef("HEAD")
+		return getRef("HEAD", true).value
 	}
 
 	var refPaths = []string{"", "refs/", "refs/tags/", "refs/heads/"}
 
 	for _, refPath := range refPaths {
-		ref := getRef(refPath + in)
-		if ref != "" {
-			return ref
+		ref := getRef(refPath+in, false)
+		if ref != nil {
+			return ref.value
 		}
 	}
 
@@ -151,8 +169,9 @@ func init() {
 	rootCmd.AddCommand(commitCmd)
 	rootCmd.AddCommand(logCmd)
 	rootCmd.AddCommand(checkoutCmd)
-  rootCmd.AddCommand(tagCmd)
-  rootCmd.AddCommand(kCmd)
+	rootCmd.AddCommand(tagCmd)
+	rootCmd.AddCommand(kCmd)
+  rootCmd.AddCommand(branchCmd)
 }
 
 func main() {
