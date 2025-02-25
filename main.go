@@ -56,12 +56,7 @@ var catObjectCmd = &cobra.Command{
 	Use:   "cat-object",
 	Short: "Provide content of repository object",
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			cmd.Println("No hash provided")
-			return
-		}
-
-		cmd.Println(catObject(args[0], ""))
+		cmd.Println(catObject(resolveRefOrHash(getItemOrEmpty(args, 0)), ""))
 	},
 }
 
@@ -77,34 +72,74 @@ var readTreeCmd = &cobra.Command{
 	Use:   "read-tree",
 	Short: "Read a tree object",
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			cmd.Println("No hash provided")
-			return
-		}
-
-		readTree(args[0])
+		readTree(resolveRefOrHash(getItemOrEmpty(args, 0)))
 	},
 }
 
 var logCmd = &cobra.Command{
-  Use:   "log",
-  Short: "Show commit logs",
-  Run: func(cmd *cobra.Command, args []string) {
-    log()
-  },
+	Use:   "log",
+	Short: "Show commit logs",
+	Run: func(cmd *cobra.Command, args []string) {
+		log(resolveRefOrHash(getItemOrEmpty(args, 0)))
+	},
 }
 
 var checkoutCmd = &cobra.Command{
-  Use:   "checkout",
-  Short: "Checkout a commit",
-  Run: func(cmd *cobra.Command, args []string) {
-    if len(args) == 0 {
-      cmd.Println("No hash provided")
-      return
-    }
+	Use:   "checkout",
+	Short: "Checkout a commit",
+	Run: func(cmd *cobra.Command, args []string) {
+		checkout(resolveRefOrHash(getItemOrEmpty(args, 0)))
+	},
+}
 
-    checkout(args[0])
+var tagCmd = &cobra.Command{
+	Use:   "tag",
+	Short: "Tag a commit",
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) < 1 {
+			cmd.Println("no tag name provided")
+			return
+		}
+		tag(args[0], resolveRefOrHash(getItemOrEmpty(args, 1)))
+	},
+}
+
+var kCmd = &cobra.Command{
+  Use:   "k",
+  Short: "Show refs",
+  Run: func(cmd *cobra.Command, args []string) {
+    k()
   },
+}
+
+func getItemOrEmpty(args []string, index int) string {
+
+	if len(args) <= index {
+		return ""
+	}
+	return args[index]
+}
+
+func resolveRefOrHash(in string) string {
+
+  if in == "@" {
+    in = "HEAD"
+  }
+
+	if in == "" {
+		return getRef("HEAD")
+	}
+
+	var refPaths = []string{"", "refs/", "refs/tags/", "refs/heads/"}
+
+	for _, refPath := range refPaths {
+		ref := getRef(refPath + in)
+		if ref != "" {
+			return ref
+		}
+	}
+
+	return in
 }
 
 func init() {
@@ -113,9 +148,11 @@ func init() {
 	rootCmd.AddCommand(catObjectCmd)
 	rootCmd.AddCommand(writeTreeCmd)
 	rootCmd.AddCommand(readTreeCmd)
-  rootCmd.AddCommand(commitCmd)
-  rootCmd.AddCommand(logCmd)
-  rootCmd.AddCommand(checkoutCmd)
+	rootCmd.AddCommand(commitCmd)
+	rootCmd.AddCommand(logCmd)
+	rootCmd.AddCommand(checkoutCmd)
+  rootCmd.AddCommand(tagCmd)
+  rootCmd.AddCommand(kCmd)
 }
 
 func main() {

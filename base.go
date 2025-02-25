@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -13,64 +16,153 @@ type treeEntry struct {
 }
 
 type Commit struct {
-  Hash    string
-  Tree string
-  Message string
-  Parent string
+	Hash    string
+	Tree    string
+	Message string
+	Parent  string
+}
+
+func tag(name, hash string) {
+	setRef("refs/tags/"+name, hash)
 }
 
 func commit(message string) string {
-	head := getHEAD()
+	head := getRef("HEAD")
 	tree := writeTree(".")
 	data := fmt.Sprintf("tree %s", tree)
-  if head != "" {
-    data += fmt.Sprintf("\nparent %s", head)
-  }
-  data += fmt.Sprintf("\n\n%s", message)
+	if head != "" {
+		data += fmt.Sprintf("\nparent %s", head)
+	}
+	data += fmt.Sprintf("\n\n%s", message)
 
 	commithash := hashObject([]byte(data), "commit")
-	setHEAD(commithash)
+	setRef("HEAD", commithash)
 	return commithash
 }
 
 func getCommit(hash string) *Commit {
-  data := catObject(hash, "commit")
-  parts := strings.Split(data, "\n")
-  var parent string
-  if len(parts) > 3 {
-    parent = parts[1][7:]
-  } else {
-    parent = ""
-  }
-  return &Commit{Hash: hash, Message: parts[len(parts) - 1], Parent: parent, Tree: parts[0][5:]}
+	data := catObject(hash, "commit")
+	parts := strings.Split(data, "\n")
+	var parent string
+	if len(parts) > 3 {
+		parent = parts[1][7:]
+	} else {
+		parent = ""
+	}
+	return &Commit{Hash: hash, Message: parts[len(parts)-1], Parent: parent, Tree: parts[0][5:]}
 }
 
-func log() {
-  hash := getHEAD()
+func log(hash string) {
+	for hash != "" {
+		commit := getCommit(hash)
 
-  for hash != "" {
-    commit := getCommit(hash)
+		fmt.Printf("commit %s\ntree %s\n\n%s\n\n", commit.Hash, commit.Tree, commit.Message)
+		hash = commit.Parent
+	}
+}
 
-    fmt.Printf("commit %s\ntree %s\n\n%s\n\n", commit.Hash, commit.Tree, commit.Message)
-    hash = commit.Parent
-  }
+func k() {
+	refs := getRefs()
+
+	hashes := []string{}
+	dot := "digraph commits {\n"
+	for _, ref := range refs {
+		hashes = append(hashes, ref[1])
+		dot += fmt.Sprintf("\"%s\" [shape=note]\n", ref[0])
+		dot += fmt.Sprintf("\"%s\" -> \"%s\"\n", ref[0], ref[1])
+	}
+
+	for hash := range commitsAndParents(hashes) {
+		commit := getCommit(hash)
+		dot += fmt.Sprintf("\"%s\" [shape=box style=filled label=\"%s\"]\n", hash, hash[:10])
+		if commit.Parent != "" {
+			dot += fmt.Sprintf("\"%s\" -> \"%s\"\n", hash, commit.Parent)
+		}
+	}
+	dot += "}"
+
+	outputFile, err := os.Create("output.png")
+	if err != nil {
+		fmt.Println("Error creating output file:", err)
+		return
+	}
+	defer outputFile.Close()
+
+	cmd := exec.Command("dot", "-Tpng", "/dev/stdin")
+	cmd.Stdin = strings.NewReader(dot)
+	cmd.Stdout = outputFile
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Println("Error running dot command:", err)
+	}
+
+	var openCmd *exec.Cmd
+	switch os := runtime.GOOS; os {
+	case "darwin":
+		openCmd = exec.Command("open", "output.png")
+	case "linux":
+		openCmd = exec.Command("xdg-open", "output.png")
+	case "windows":
+		openCmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", "output.png")
+	default:
+		fmt.Println("Unsupported platform")
+		return
+	}
+
+	if err := openCmd.Start(); err != nil {
+		fmt.Println("Error opening image:", err)
+	}
+}
+
+func commitsAndParents(hashes []string) chan string {
+	ch := make(chan string)
+
+	go func() {
+		defer close(ch)
+		visited := make(map[string]bool)
+		for len(hashes) > 0 {
+			hash := hashes[len(hashes)-1]
+			hashes = hashes[:len(hashes)-1]
+			if visited[hash] == true {
+				continue
+			}
+			visited[hash] = true
+			ch <- hash
+			commit := getCommit(hash)
+			if commit.Parent != "" {
+				hashes = append(hashes, commit.Parent)
+			}
+		}
+	}()
+	return ch
+}
+
+func getRefs() [][]string {
+	refs := []string{"HEAD"}
+	if err := filepath.Walk(".dgit/refs", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			refs = append(refs, strings.ReplaceAll(path, ".dgit/", ""))
+		}
+		return nil
+	}); err != nil {
+		panic(err)
+	}
+
+	result := make([][]string, len(refs))
+	for i, ref := range refs {
+		result[i] = []string{ref, getRef(ref)}
+	}
+
+	return result
 }
 
 func checkout(hash string) {
-  readTree(getCommit(hash).Tree)
-  setHEAD(hash)
-}
-
-func setHEAD(hash string) {
-	os.WriteFile(".dgit/HEAD", []byte(hash), 0644)
-}
-
-func getHEAD() string {
-	data, err := os.ReadFile(".dgit/HEAD")
-	if err != nil {
-    return ""
-	}
-	return string(data)
+	readTree(getCommit(hash).Tree)
+	setRef("HEAD", hash)
 }
 
 func getTreeEntries(hash string) []treeEntry {
