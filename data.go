@@ -7,6 +7,18 @@ import (
 	"os"
 )
 
+func setRef(name string, hash string) {
+	os.WriteFile(".dgit/" + name, []byte(hash), 0644)
+}
+
+func getRef(name string) string {
+	data, err := os.ReadFile(".dgit/" + name)
+	if err != nil {
+    return ""
+	}
+	return string(data)
+}
+
 func initDgit() {
 	os.MkdirAll(".dgit/objects", 0755)
 	os.MkdirAll(".dgit/refs/tags", 0755)
