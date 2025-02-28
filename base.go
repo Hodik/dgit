@@ -22,11 +22,34 @@ type Commit struct {
 	Parent  string
 }
 
+func initialize() {
+	initDgit()
+	setRef("HEAD", &RefValue{value: "refs/heads/master", isSymbolic: true}, false)
+}
+
+func getBranch() string {
+	HEAD := getRef("HEAD", false)
+	if !HEAD.isSymbolic {
+		return ""
+	}
+	return strings.TrimPrefix(HEAD.value, "refs/heads/")
+}
+
+func getBranches() []string {
+	refs := getRefs("refs/heads/", false)
+	var branches []string
+	for ref := range refs {
+		branches = append(branches, strings.TrimPrefix(ref, "refs/heads/"))
+	}
+	return branches
+}
+
 func tag(name, hash string) {
 	setRef("refs/tags/"+name, &RefValue{value: hash, isSymbolic: false}, true)
 }
 
-func branch(name, hash string) {
+func createBranch(name, hash string) {
+	fmt.Println("Creating branch", name, "at", hash)
 	setRef("refs/heads/"+name, &RefValue{value: hash, isSymbolic: false}, true)
 }
 
@@ -61,24 +84,37 @@ func getCommit(hash string) *Commit {
 }
 
 func log(hash string) {
+	refs := getRefs("", true)
+	commitToRefs := make(map[string][]string)
+
+	for ref, value := range refs {
+		commitToRefs[value.value] = append(commitToRefs[value.value], ref)
+	}
+
 	for hash := range commitsAndParents([]string{hash}) {
 		commit := getCommit(hash)
 
-		fmt.Printf("commit %s\ntree %s\n\n%s\n\n", commit.Hash, commit.Tree, commit.Message)
+		var refsStr string
+		if commitToRefs[commit.Hash] == nil {
+			refsStr = ""
+		} else {
+			refsStr = "(" + strings.Join(commitToRefs[commit.Hash], ", ") + ")"
+		}
+		fmt.Printf("commit %s %s\ntree %s\n\n%s\n\n", commit.Hash, refsStr, commit.Tree, commit.Message)
 		hash = commit.Parent
 	}
 }
 
 func k() {
-	refs := getRefs(false)
+	refs := getRefs("", false)
 
-  fmt.Println("refs:", refs)
+	fmt.Println("refs:", refs)
 	hashes := []string{}
 	dot := "digraph commits {\n"
 	for ref, value := range refs {
-    if !value.isSymbolic {
-  		hashes = append(hashes, value.value)
-    }
+		if !value.isSymbolic {
+			hashes = append(hashes, value.value)
+		}
 		dot += fmt.Sprintf("\"%s\" [shape=note]\n", ref)
 		dot += fmt.Sprintf("\"%s\" -> \"%s\"\n", ref, value.value)
 	}
@@ -135,7 +171,7 @@ func commitsAndParents(hashes []string) chan string {
 		for len(hashes) > 0 {
 			hash := hashes[len(hashes)-1]
 			hashes = hashes[:len(hashes)-1]
-			if visited[hash] == true {
+			if visited[hash] {
 				continue
 			}
 			visited[hash] = true
@@ -149,7 +185,7 @@ func commitsAndParents(hashes []string) chan string {
 	return ch
 }
 
-func getRefs(deref bool) map[string]*RefValue {
+func getRefs(prefix string, deref bool) map[string]*RefValue {
 	refs := []string{"HEAD"}
 	if err := filepath.Walk(".dgit/refs", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -165,6 +201,11 @@ func getRefs(deref bool) map[string]*RefValue {
 
 	result := make(map[string]*RefValue)
 	for _, ref := range refs {
+
+		if prefix != "" && !strings.HasPrefix(ref, prefix) {
+			continue
+		}
+
 		result[ref] = getRef(ref, deref)
 	}
 

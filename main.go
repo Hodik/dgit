@@ -18,7 +18,7 @@ var initCmd = &cobra.Command{
 	Short: "Initialize a new dgit repository",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Println("Initializing repository...")
-		initDgit()
+		initialize()
 	},
 }
 
@@ -119,15 +119,36 @@ var kCmd = &cobra.Command{
 }
 
 var branchCmd = &cobra.Command{
-  Use:   "branch",
-  Short: "Create a new branch",
-  Run: func(cmd *cobra.Command, args []string) {
-    if len(args) < 1 {
-      cmd.Println("no branch name provided")
-      return
-    }
-    branch(args[0], resolveRefOrHash(getItemOrEmpty(args, 1)))
-  },
+	Use:   "branch",
+	Short: "Create a new branch",
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) < 1 {
+			currentBranch := getBranch()
+			for _, branch := range getBranches() {
+				if branch == currentBranch {
+					cmd.Println("*", branch)
+				} else {
+					cmd.Println(" ", branch)
+				}
+			}
+			return
+		}
+		createBranch(args[0], resolveRefOrHash(getItemOrEmpty(args, 1)))
+	},
+}
+
+var statusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show the working tree status",
+	Run: func(cmd *cobra.Command, args []string) {
+		HEAD := resolveRefOrHash("@")
+		branch := getBranch()
+		if branch == "" {
+			cmd.Println("HEAD is detached at" + HEAD[:10])
+		} else {
+			cmd.Println("On branch", branch)
+		}
+	},
 }
 
 func getItemOrEmpty(args []string, index int) string {
@@ -140,12 +161,8 @@ func getItemOrEmpty(args []string, index int) string {
 
 func resolveRefOrHash(in string) string {
 
-	if in == "@" {
+	if in == "@" || in == "" {
 		in = "HEAD"
-	}
-
-	if in == "" {
-		return getRef("HEAD", true).value
 	}
 
 	var refPaths = []string{"", "refs/", "refs/tags/", "refs/heads/"}
@@ -153,7 +170,7 @@ func resolveRefOrHash(in string) string {
 	for _, refPath := range refPaths {
 		ref := getRef(refPath+in, false)
 		if ref != nil {
-			return ref.value
+			return getRef(refPath+in, true).value
 		}
 	}
 
@@ -171,7 +188,8 @@ func init() {
 	rootCmd.AddCommand(checkoutCmd)
 	rootCmd.AddCommand(tagCmd)
 	rootCmd.AddCommand(kCmd)
-  rootCmd.AddCommand(branchCmd)
+	rootCmd.AddCommand(branchCmd)
+	rootCmd.AddCommand(statusCmd)
 }
 
 func main() {

@@ -34,14 +34,18 @@ func getRef(name string, deref bool) *RefValue {
 func getRefInternal(name string, deref bool) (string, *RefValue) {
 	data, err := os.ReadFile(".dgit/" + name)
 	if err != nil {
-		return "", nil
+		return name, nil
 	}
 
 	strdata := string(data)
 	symbolic := strings.HasPrefix(strdata, "ref: ")
-	if symbolic && deref {
-		return getRefInternal(strings.TrimPrefix(strdata, "ref: "), deref)
+	if symbolic {
+		strdata = strings.TrimSpace(strings.Split(strdata, ":")[1])
+		if deref {
+			return getRefInternal(strings.TrimPrefix(strdata, "ref: "), deref)
+		}
 	}
+
 	return name, &RefValue{value: strdata, isSymbolic: symbolic}
 }
 
